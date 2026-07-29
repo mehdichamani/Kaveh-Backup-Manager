@@ -1,68 +1,92 @@
-# Server Backup Manager
+# مدیر پشتیبان‌گیری سرور
 
-A Windows desktop application for managing automated file backups from network shares to local storage, with optional DVD archiving and retention policies.
+ابزاری حرفه‌ای برای پشتیبان‌گیری خودکار از فایل‌های شبکه روی حافظه محلی، با قابلیت آرشیو DVD و سیاست نگهداری فایل‌ها.
 
-## Features
+---
 
-- **GUI (PyQt6)** — visual interface with real-time progress bars and Persian (RTL) UI
-- **Terminal UI (Rich)** — text-based interface for headless/scripted use
-- **Robocopy integration** — reliable file copying with configurable flags per job
-- **Jalali calendar** — DVD archive tracking using the Persian calendar
-- **Retention policy** — optionally auto-delete files older than N days
-- **Chunked copy** — progress callbacks during large file transfers
+## چرا از این ابزار استفاده کنیم؟
 
-## Project Structure
+### کارایی و عملکرد
+
+- **سرعت بالا در کپی فایل** — استفاده از Robocopy به جای کپی معمولی ویندوز؛ قابلیت کپی چندTHREAD، مدیریت خطا و ادامه خودکار عملیات قطع‌شده
+- **پشتیبانی از شبکه** — کپی مستقیم از مسیرهای UNC شبکه (SMB) بدون نیاز به نصب اضافی
+- **کپی تکه‌ای با نمایش پیشرفت** — حتی در فایل‌های چندصد گیگابایتی، نوار پیشرفت به‌روز می‌شود و کاربر از وضعیت عملیات باخبر است
+- **مدیریت چندین job به‌صورت همزمان** — اجرای همزمان چندین عملیات پشتیبان‌گیری بدون تداخل
+
+### مزیت‌ها
+
+- **رابط کاربری فارسی (RTL)** — محیط گرافیکی کاملاً فارسی با فونت وزیرمتن، مناسب کاربران ایرانی
+- **رابط متنی** — امکان اجرا در سرورها و محیط‌های بدون نمایشگر (headless) با Rich Terminal UI
+- **آرشیو هفتگی با تقویم جلالی** — پیگیری وضعیت رایت DVD بر اساس هفته‌های تقویم شمسی
+- **سیاست نگهداری خودکار** — حذف فایل‌های قدیمی‌تر از N روز به‌صورت خودکار
+- **پیکربندی ساده** — یک فایل YAML تمام تنظیمات را مشخص می‌کند، بدون نیاز به دیتابیس
+- **فایل اجرایی مستقل** — قابل کامپایل به یک فایل EXE با PyInstaller، بدون نیاز به نصب Python روی سرور مقصد
+- **عدم نیاز به اینترنت** — عملیات کاملاً آفلاین و محلی اجرا می‌شود
+
+---
+
+## ساختار پروژه
 
 ```
-backup_manager.py          # Entry point
+backup_manager.py          # نقطه شروع برنامه
 core/
-  config_loader.py         # YAML config parsing, BackupJob/AppConfig dataclasses
-  copier.py                # File copy engine with progress callbacks
-  dvd_tracker.py           # Jalali calendar & weekly archive tracking
-  retention.py             # Delete files older than N days
+  config_loader.py         # بارگذاری و اعتبارسنجی فایل پیکربندی
+  copier.py                # موتور کپی فایل با نمایش پیشرفت
+  dvd_tracker.py           # پیگیری آرشیو DVD با تقویم جلالی
+  retention.py             # حذف خودکار فایل‌های قدیمی
 ui/
-  gui_main.py              # PyQt6 GUI (main window)
-  terminal.py              # Rich-based terminal UI
-assets/                    # Icons and Persian fonts
-config.yaml                # Backup job definitions (edit this)
-dvd_tracker.yaml           # DVD archive tracking state
+  gui_main.py              # رابط گرافیکی PyQt6
+  terminal.py              # رابط متنی Rich
+assets/                    # آیکون‌ها و فونت‌های فارسی
+config.yaml                # تعریف عملیات پشتیبان‌گیری (فایل اصلی پیکربندی)
+dvd_tracker.yaml           # وضعیت ردیابی آرشیو DVD
 ```
 
-## Requirements
+---
 
-- Windows (SMB auth, robocopy, PyInstaller)
-- Python 3.10+
+## نصب و راه‌اندازی
+
+### پیش‌نیازها
+
+- ویندوز (XP به بالا)
+- Python 3.10 یا بالاتر
+
+### نصب وابستگی‌ها
 
 ```bash
 pip install -r requirements.txt
 ```
 
-## Usage
+### اجرا
 
 ```bash
-# Run the GUI
 python backup_manager.py
+```
 
-# Or use the launcher
+یا از فایل لانچر استفاده کنید:
+
+```bat
 start.bat
 ```
 
-## Configuration
+---
 
-Edit `config.yaml` to define your backup jobs:
+## پیکربندی
+
+فایل `config.yaml` را ویرایش کنید:
 
 ```yaml
 general:
-  log_directory: /path/to/logs
+  log_directory: D:\Logs
   open_log_on_finish: false
   max_log_files_to_keep: 60
 
 jobs:
-  - id: my_backup
-    name: My Backup Job
+  - id: backup_daily
+    name: پشتیبان روزانه
     enabled: true
-    source: \\server\share\path
-    destination: D:\Backups\my_backup
+    source: \\192.168.1.10\Backup\Daily
+    destination: D:\Backups\daily
     username: ''
     password: ''
     warn_older_than_hours: 24
@@ -75,18 +99,38 @@ jobs:
       - /w:5
 
 retention:
-  enabled: false
+  enabled: true
   delete_files_older_than_days: 90
 ```
 
-## Building
+### تنظیمات مهم
+
+| تنظیم | توضیح |
+|---|---|
+| `source` | مسیر مبدأ (UNC شبکه یا محلی) |
+| `destination` | مسیر مقصد پشتیبان |
+| `robocopy_flags` | پارامترهای Robocopy — امکان سفارشی‌سازی کامل |
+| `warn_older_than_hours` | هشدار اگر آخرین فایل قدیمی‌تر از این مقدار باشد |
+| `retention.delete_files_older_than_days` | حذف خودکار فایل‌های قدیمی‌تر |
+
+---
+
+## ساخت فایل اجرایی
 
 ```bat
 build_exe.bat
 ```
 
-Produces `dist\BackupManager.exe` (standalone, no Python required).
+فایل نهایی در مسیر زیر ایجاد می‌شود:
 
-## License
+```
+dist\BackupManager.exe
+```
+
+این فایل مستقل است و نیازی به نصب Python یا هیچ وابستگی دیگری ندارد.
+
+---
+
+## لایسنس
 
 MIT
