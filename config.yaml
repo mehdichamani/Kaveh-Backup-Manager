@@ -1,0 +1,98 @@
+general:
+  log_directory: Y:\DatabaseBackup\Database
+  open_log_on_finish: false
+  max_log_files_to_keep: 60
+jobs:
+- id: acc_daily
+  name: حقوق مالی انبار روزانه
+  enabled: true
+  source: \\172.30.39.2\Backup\Daily
+  destination: Y:\DatabaseBackup\Database\acc\Daily
+  username: ''
+  password: ''
+  warn_older_than_hours: 24
+  robocopy_flags:
+  - /xo
+  - /s
+  - /nfl
+  - /np
+  - /r:2
+  - /w:5
+- id: acc_nightly
+  name: حقوق مالی انبار شبانه
+  enabled: true
+  source: \\172.30.39.2\Backup\Nightly
+  destination: Y:\DatabaseBackup\Database\acc\Nightly
+  username: ''
+  password: ''
+  warn_older_than_hours: 24
+  robocopy_flags:
+  - /xo
+  - /s
+  - /nfl
+  - /np
+  - /r:2
+  - /w:5
+- id: acc_systemdatabase
+  name: حقوق مالی انبار سیستمی
+  enabled: true
+  source: \\172.30.39.2\Backup\SystemDatabase
+  destination: Y:\DatabaseBackup\Database\acc\SystemDatabase
+  username: ''
+  password: ''
+  warn_older_than_hours: 24
+  robocopy_flags:
+  - /xo
+  - /s
+  - /nfl
+  - /np
+  - /r:2
+  - /w:5
+- id: acc_Weekly
+  name: حقوق مالی انبار هفتگی
+  enabled: true
+  source: \\172.30.39.2\Backup\Weekly
+  destination: Y:\DatabaseBackup\Database\acc\Weekly
+  username: ''
+  password: ''
+  warn_older_than_hours: 24
+  robocopy_flags:
+  - /xo
+  - /s
+  - /nfl
+  - /np
+  - /r:2
+  - /w:5
+- id: attendance_pw
+  name: حضورغیاب جهان پردازش
+  enabled: true
+  source: \\172.30.39.21\backup_pw
+  destination: Y:\DatabaseBackup\Database\pw
+  username: ''
+  password: ''
+  warn_older_than_hours: 24
+  robocopy_flags:
+  - /xo
+  - /s
+  - /nfl
+  - /np
+  - /r:2
+  - /w:5
+- id: job_1784955414
+  name: حقوق مالی انبار دیفرنتال
+  enabled: true
+  source: \\172.30.39.2\Backup\Defferential
+  destination: Y:\DatabaseBackup\Database\acc\Defferential
+  username: ''
+  password: ''
+  warn_older_than_hours: 24
+  robocopy_flags:
+  - /xo
+  - /s
+  - /nfl
+  - /np
+  - /r:2
+  - /w:5
+retention:
+  enabled: false
+  delete_files_older_than_days: 90
