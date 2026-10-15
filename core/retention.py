@@ -11,7 +11,8 @@ class CleanupResult:
     errors: List[str]
 
 def run_retention_policy(target_dir: str, max_age_days: int) -> CleanupResult:
-    dir_path = Path(target_dir)
+    from .copier import resolve_path
+    dir_path = resolve_path(target_dir)
     if not dir_path.exists() or max_age_days <= 0:
         return CleanupResult(files_removed=0, bytes_freed=0, errors=[])
 

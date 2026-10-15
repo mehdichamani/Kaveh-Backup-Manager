@@ -47,30 +47,35 @@ def load_config(config_path: Optional[str] = None) -> AppConfig:
         config_path = Path(config_path)
 
     if not config_path.exists():
-        # Create empty config file with minimal structure
-        data = {
-            "general": {
-                "log_directory": "",
-                "open_log_on_finish": False,
-                "max_log_files_to_keep": 60
-            },
-            "jobs": [],
-            "retention": {
-                "enabled": False,
-                "delete_files_older_than_days": 90
+        example_path = config_path.parent / "config.example.yaml"
+        if example_path.exists():
+            import shutil
+            shutil.copy2(example_path, config_path)
+        else:
+            # Create empty config file with minimal structure
+            data = {
+                "general": {
+                    "log_directory": "",
+                    "open_log_on_finish": False,
+                    "max_log_files_to_keep": 60
+                },
+                "jobs": [],
+                "retention": {
+                    "enabled": False,
+                    "delete_files_older_than_days": 90
+                }
             }
-        }
-        config_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(config_path, "w", encoding="utf-8") as f:
-            yaml.dump(data, f, allow_unicode=True, sort_keys=False)
-        return AppConfig(
-            log_directory="",
-            open_log_on_finish=False,
-            max_log_files_to_keep=60,
-            jobs=[],
-            retention=RetentionConfig(),
-            raw_config=data
-        )
+            config_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(config_path, "w", encoding="utf-8") as f:
+                yaml.dump(data, f, allow_unicode=True, sort_keys=False)
+            return AppConfig(
+                log_directory="",
+                open_log_on_finish=False,
+                max_log_files_to_keep=60,
+                jobs=[],
+                retention=RetentionConfig(),
+                raw_config=data
+            )
 
     with open(config_path, "r", encoding="utf-8") as f:
         data = yaml.safe_load(f) or {}

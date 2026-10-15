@@ -187,6 +187,19 @@ def generate_weekly_periods() -> List[DvdWeek]:
         
     return list(reversed(periods)) # Newest weeks on top
 
+def get_desktop_dir() -> Path:
+    # Check standard ~/Desktop
+    d = Path(os.path.expanduser("~")) / "Desktop"
+    if d.exists():
+        return d
+    # Check XDG user dir Desktop if defined
+    xdg_desktop = os.environ.get("XDG_DESKTOP_DIR")
+    if xdg_desktop and Path(xdg_desktop).exists():
+        return Path(xdg_desktop)
+    # Default create/return ~/Desktop or fallback home
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
 def copy_weekly_backups(
     source_dir: str,
     dest_dir_name: str,
@@ -194,15 +207,17 @@ def copy_weekly_backups(
     progress_callback: Optional[Callable[[CopyProgress], None]] = None,
     cancel_requested: Optional[Callable[[], bool]] = None
 ) -> Tuple[bool, int, int, str]:
+    from .copier import resolve_path
+
     # Saturday to Thursday range
     range_start = datetime(start_dt.year, start_dt.month, start_dt.day, 0, 0, 0)
     thursday = start_dt + timedelta(days=5)
     range_end = datetime(thursday.year, thursday.month, thursday.day, 23, 59, 59)
     
-    desktop_path = Path(os.path.expanduser("~")) / "Desktop"
+    desktop_path = get_desktop_dir()
     dest_path = desktop_path / dest_dir_name
     
-    src_path = Path(source_dir)
+    src_path = resolve_path(source_dir)
     if not src_path.exists():
         return False, 0, 0, "پوشه مرجع بکاپ یافت نشد!"
         

@@ -5,7 +5,7 @@
 - `backup_manager.py` → `ui.gui_main.run_gui()` — the single entrypoint
 - `core/` — config loading, file copy engine, retention, DVD/Jalali calendar tracker
 - `ui/` — PyQt6 GUI (`gui_main.py`), Rich terminal UI (`terminal.py`)
-- Windows-only: SMB auth via `net use`, chunked Python copy, `robocopy` flag conventions in config
+- Cross-platform (Linux & Windows): SMB auth via `net use` (Windows) / `gio mount` & GVFS (Linux), chunked Python copy, `robocopy` flag conventions in config
 
 ## Key files
 

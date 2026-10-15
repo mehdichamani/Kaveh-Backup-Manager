@@ -3,15 +3,17 @@ __pycache__/
 *.pyc
 *.pyo
 *.pyd
+.venv/
 
 # PyInstaller
 build/
 dist/
 *.spec
 
-# Runtime data (uncomment if you don't want to track config changes)
-# config.yaml
-# dvd_tracker.yaml
+# Runtime data & sensitive configs
+config.yaml
+dvd_tracker.yaml
+.env
 
 # OS files
 Thumbs.db

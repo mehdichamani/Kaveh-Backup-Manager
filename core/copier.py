@@ -1,4 +1,5 @@
 import os
+import sys
 import re
 import time
 import shutil
@@ -47,22 +48,132 @@ class JobResult:
     stale_hours: float = 0.0
     error_message: str = ""
 
+def parse_unc(unc_path: str) -> Optional[Tuple[str, str, str]]:
+    """Extracts (host, share, subpath) from Windows UNC or smb:// URI."""
+    clean = unc_path.replace("\\", "/").strip()
+    if clean.startswith("smb://"):
+        clean = clean[6:]
+    elif clean.startswith("//"):
+        clean = clean[2:]
+    elif clean.startswith("/"):
+        clean = clean[1:]
+    else:
+        return None
+
+    parts = [p for p in clean.split("/") if p]
+    if len(parts) >= 2:
+        host, share = parts[0], parts[1]
+        subpath = "/".join(parts[2:])
+        return host, share, subpath
+    return None
+
+def resolve_path(path_str: str) -> Path:
+    """
+    Resolves local paths, Windows UNC paths, or SMB paths into an accessible Path.
+    On Linux, resolves UNC shares mapped through GVFS (/run/user/<uid>/gvfs).
+    """
+    path_str = (path_str or "").strip()
+    if not path_str:
+        return Path(".")
+
+    # On Windows or standard existing local path
+    p = Path(path_str)
+    if p.exists() or sys.platform == "win32":
+        return p
+
+    unc_info = parse_unc(path_str)
+    if unc_info and sys.platform != "win32":
+        host, share, subpath = unc_info
+        gvfs_dir = Path(f"/run/user/{os.getuid()}/gvfs")
+        if gvfs_dir.exists():
+            # Check exact match candidates
+            candidates = [
+                f"smb-share:server={host},share={share.lower()}",
+                f"smb-share:server={host},share={share}",
+                f"smb-share:server={host.lower()},share={share.lower()}",
+                f"smb-share:server={host.lower()},share={share}",
+            ]
+            for cand in candidates:
+                cand_path = gvfs_dir / cand
+                if cand_path.exists():
+                    return cand_path / subpath if subpath else cand_path
+
+            # Fuzzy search across active gvfs mounts
+            try:
+                for item in gvfs_dir.iterdir():
+                    name_l = item.name.lower()
+                    if f"server={host.lower()}" in name_l and f"share={share.lower()}" in name_l:
+                        return item / subpath if subpath else item
+            except OSError:
+                pass
+
+    return p
+
 def connect_network_share(unc_path: str, username: Optional[str], password: Optional[str]) -> Tuple[bool, str]:
-    if not username or not password:
+    if not unc_path:
         return True, ""
-    match = re.match(r"^\\\\([^\\]+)\\([^\\]+)", unc_path)
-    if not match:
+
+    if sys.platform == "win32":
+        if not username or not password:
+            return True, ""
+        match = re.match(r"^\\\\([^\\]+)\\([^\\]+)", unc_path)
+        if not match:
+            return True, ""
+        share_root = f"\\\\{match.group(1)}\\{match.group(2)}"
+        try:
+            # Establish connection with net use
+            cmd = ["net", "use", share_root, password, f"/user:{username}", "/y"]
+            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
+            if proc.returncode != 0:
+                return False, f"خطای اتصال شبکه: {proc.stderr.strip()}"
+            return True, ""
+        except Exception as e:
+            return False, f"خطای سیستمی اتصال شبکه: {str(e)}"
+
+    # Linux SMB connection handling
+    unc_info = parse_unc(unc_path)
+    if not unc_info:
         return True, ""
-    share_root = f"\\\\{match.group(1)}\\{match.group(2)}"
-    try:
-        # Establish connection with net use
-        cmd = ["net", "use", share_root, password, f"/user:{username}", "/y"]
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
-        if proc.returncode != 0:
-            return False, f"خطای اتصال شبکه: {proc.stderr.strip()}"
+
+    host, share, _ = unc_info
+    resolved = resolve_path(unc_path)
+    if resolved.exists():
         return True, ""
-    except Exception as e:
-        return False, f"خطای سیستمی اتصال شبکه: {str(e)}"
+
+    # Attempt to mount via gio mount if available
+    gio_bin = shutil.which("gio")
+    if gio_bin:
+        smb_uri = f"smb://{host}/{share}"
+        try:
+            # Check if mount stdin can provide credentials
+            if username and password:
+                # gio mount prompts for user/domain/password
+                input_data = f"{username}\n\n{password}\n"
+                proc = subprocess.run(
+                    [gio_bin, "mount", smb_uri],
+                    input=input_data,
+                    capture_output=True,
+                    text=True,
+                    timeout=15
+                )
+            else:
+                proc = subprocess.run(
+                    [gio_bin, "mount", "-a", smb_uri],
+                    capture_output=True,
+                    text=True,
+                    timeout=15
+                )
+
+            # Check if mounted now
+            if resolve_path(unc_path).exists():
+                return True, ""
+            if proc.returncode != 0 and "already mounted" not in proc.stderr.lower():
+                return False, f"خطای اتصال SMB (gio mount): {proc.stderr.strip() or proc.stdout.strip()}"
+        except Exception as e:
+            return False, f"خطای سیستمی مونت SMB: {str(e)}"
+
+    return True, ""
+
 
 def scan_directory_files(dir_path: Path, base_path: Optional[Path] = None) -> List[FileMeta]:
     files = []
@@ -113,8 +224,8 @@ def run_backup_job_with_progress(
             error_message=auth_err
         )
 
-    source_path = Path(job.source)
-    dest_path = Path(job.destination)
+    source_path = resolve_path(job.source)
+    dest_path = resolve_path(job.destination)
 
     # Check source availability
     if not source_path.exists():

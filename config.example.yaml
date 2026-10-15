@@ -1,5 +1,5 @@
 general:
-  log_directory: Y:\DatabaseBackup\Database
+  log_directory: /run/media/unreal/IT-Sachi-Backup/DatabaseBackup/Database
   open_log_on_finish: false
   max_log_files_to_keep: 60
 jobs:
@@ -7,7 +7,7 @@ jobs:
   name: حقوق مالی انبار روزانه
   enabled: true
   source: \\172.30.39.2\Backup\Daily
-  destination: Y:\DatabaseBackup\Database\acc\Daily
+  destination: /run/media/unreal/IT-Sachi-Backup/DatabaseBackup/Database/acc/Daily
   username: ''
   password: ''
   warn_older_than_hours: 24
@@ -22,7 +22,7 @@ jobs:
   name: حقوق مالی انبار شبانه
   enabled: true
   source: \\172.30.39.2\Backup\Nightly
-  destination: Y:\DatabaseBackup\Database\acc\Nightly
+  destination: /run/media/unreal/IT-Sachi-Backup/DatabaseBackup/Database/acc/Nightly
   username: ''
   password: ''
   warn_older_than_hours: 24
@@ -37,7 +37,7 @@ jobs:
   name: حقوق مالی انبار سیستمی
   enabled: true
   source: \\172.30.39.2\Backup\SystemDatabase
-  destination: Y:\DatabaseBackup\Database\acc\SystemDatabase
+  destination: /run/media/unreal/IT-Sachi-Backup/DatabaseBackup/Database/acc/SystemDatabase
   username: ''
   password: ''
   warn_older_than_hours: 24
@@ -52,7 +52,22 @@ jobs:
   name: حقوق مالی انبار هفتگی
   enabled: true
   source: \\172.30.39.2\Backup\Weekly
-  destination: Y:\DatabaseBackup\Database\acc\Weekly
+  destination: /run/media/unreal/IT-Sachi-Backup/DatabaseBackup/Database/acc/Weekly
+  username: ''
+  password: ''
+  warn_older_than_hours: 168
+  robocopy_flags:
+  - /xo
+  - /s
+  - /nfl
+  - /np
+  - /r:2
+  - /w:5
+- id: job_1784955414
+  name: حقوق مالی انبار دیفرنتال
+  enabled: true
+  source: \\172.30.39.2\Backup\Defferential
+  destination: /run/media/unreal/IT-Sachi-Backup/DatabaseBackup/Database/acc/Defferential
   username: ''
   password: ''
   warn_older_than_hours: 24
@@ -67,22 +82,7 @@ jobs:
   name: حضورغیاب جهان پردازش
   enabled: true
   source: \\172.30.39.21\backup_pw
-  destination: Y:\DatabaseBackup\Database\pw
-  username: ''
-  password: ''
-  warn_older_than_hours: 24
-  robocopy_flags:
-  - /xo
-  - /s
-  - /nfl
-  - /np
-  - /r:2
-  - /w:5
-- id: job_1784955414
-  name: حقوق مالی انبار دیفرنتال
-  enabled: true
-  source: \\172.30.39.2\Backup\Defferential
-  destination: Y:\DatabaseBackup\Database\acc\Defferential
+  destination: /run/media/unreal/IT-Sachi-Backup/DatabaseBackup/Database/pw
   username: ''
   password: ''
   warn_older_than_hours: 24
