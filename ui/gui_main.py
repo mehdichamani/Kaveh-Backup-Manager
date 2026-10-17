@@ -10,7 +10,7 @@ from PyQt6.QtWidgets import (
     QLabel, QPushButton, QProgressBar, QTableWidget, QTableWidgetItem,
     QHeaderView, QTextEdit, QFrame, QMessageBox, QDialog, QListWidget,
     QLineEdit, QCheckBox, QFormLayout, QGroupBox, QSpinBox, QTabWidget,
-    QTabBar
+    QTabBar, QRadioButton, QButtonGroup, QComboBox
 )
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QSize
 from PyQt6.QtGui import QFont, QIcon, QColor, QFontDatabase
@@ -20,7 +20,10 @@ from core.copier import run_backup_job_with_progress, JobResult, ProgressUpdate
 from core.retention import run_retention_policy
 from core.dvd_tracker import (
     generate_weekly_periods, DvdWeek, CopyProgress, copy_weekly_backups,
-    save_dvd_tracker, load_dvd_tracker
+    save_dvd_tracker, load_dvd_tracker, get_desktop_dir
+)
+from core.burner import (
+    burn_directory_to_dvd, find_optical_drives, is_burning_tool_available, OpticalDrive
 )
 
 def get_asset_path(filename: str) -> str:
@@ -474,6 +477,151 @@ class DvdCopyWorkerThread(QThread):
         self.finished_signal.emit(success, files, bytes_copied, err)
 
 
+class DvdBurnWorkerThread(QThread):
+    progress_signal = pyqtSignal(float, str)
+    finished_signal = pyqtSignal(bool, str)
+
+    def __init__(self, target_dir: str, drive_path: Optional[str] = None, parent=None):
+        super().__init__(parent)
+        self.target_dir = target_dir
+        self.drive_path = drive_path
+        self._is_cancelled = False
+
+    def cancel(self):
+        self._is_cancelled = True
+
+    def run(self):
+        def on_progress(pct: float, msg: str):
+            self.progress_signal.emit(pct, msg)
+
+        def is_cancel():
+            return self._is_cancelled
+
+        success, msg = burn_directory_to_dvd(
+            source_dir=self.target_dir,
+            drive_path=self.drive_path,
+            progress_callback=on_progress,
+            cancel_check=is_cancel
+        )
+        self.finished_signal.emit(success, msg)
+
+
+class DvdBurnSelectDialog(QDialog):
+    def __init__(self, week_key: str, parent=None):
+        super().__init__(parent)
+        self.week_key = week_key
+        self.desktop_week_path = get_desktop_dir() / week_key
+        self.selected_path: Optional[Path] = None
+        self.selected_drive: Optional[str] = None
+
+        self.setWindowTitle(f"رایت روی DVD - هفته {week_key}")
+        self.resize(460, 320)
+        self.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
+        self.init_ui()
+
+    def _get_size_str(self, p: Path) -> str:
+        if not p.exists():
+            return "یافت نشد"
+        total_size = 0
+        try:
+            for root, _, files in os.walk(p):
+                for f in files:
+                    total_size += (Path(root) / f).stat().st_size
+            mb = total_size / (1024 * 1024)
+            if mb > 1024:
+                return f"{round(mb / 1024, 2)} گیگابایت"
+            return f"{round(mb, 1)} مگابایت"
+        except Exception:
+            return "نامشخص"
+
+    def init_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setSpacing(12)
+
+        info_lbl = QLabel(f"پوشه انتخاب شده: <b>{self.week_key}</b>")
+        layout.addWidget(info_lbl)
+
+        # Drive selector
+        drive_box = QGroupBox("انتخاب درایو نوری (DVD Drive)")
+        drive_layout = QVBoxLayout(drive_box)
+        self.drive_combo = QComboBox()
+        drives = find_optical_drives()
+        if drives:
+            for d in drives:
+                self.drive_combo.addItem(f"{d.name} ({d.path})", d.path)
+        else:
+            self.drive_combo.addItem("درایو نوری یافت نشد (/dev/sr0)", "/dev/sr0")
+        drive_layout.addWidget(self.drive_combo)
+        layout.addWidget(drive_box)
+
+        # Target selection
+        opt_box = QGroupBox("انتخاب بخش برای رایت بر روی دیسک")
+        opt_layout = QVBoxLayout(opt_box)
+
+        acc_path = self.desktop_week_path / "acc"
+        pw_path = self.desktop_week_path / "pw"
+
+        acc_size = self._get_size_str(acc_path)
+        pw_size = self._get_size_str(pw_path)
+        full_size = self._get_size_str(self.desktop_week_path)
+
+        self.rb_acc = QRadioButton(f"پوشه acc (حجم: {acc_size}) - مناسب برای DVD اول")
+        self.rb_pw = QRadioButton(f"پوشه pw (حجم: {pw_size}) - مناسب برای DVD دوم")
+        self.rb_full = QRadioButton(f"کل هفته (حجم کل: {full_size}) - مناسب برای DVD دولایه یا زیر ۴.۳GB")
+
+        self.rb_group = QButtonGroup(self)
+        self.rb_group.addButton(self.rb_acc)
+        self.rb_group.addButton(self.rb_pw)
+        self.rb_group.addButton(self.rb_full)
+
+        if acc_path.exists():
+            self.rb_acc.setChecked(True)
+        elif self.desktop_week_path.exists():
+            self.rb_full.setChecked(True)
+
+        opt_layout.addWidget(self.rb_acc)
+        opt_layout.addWidget(self.rb_pw)
+        opt_layout.addWidget(self.rb_full)
+        layout.addWidget(opt_box)
+
+        btn_layout = QHBoxLayout()
+        self.burn_btn = QPushButton("🔥 شروع رایت دیسک")
+        self.burn_btn.setObjectName("ActionBtn")
+        self.burn_btn.setStyleSheet("font-weight: bold; padding: 8px 16px;")
+        self.burn_btn.clicked.connect(self.on_accept)
+
+        cancel_btn = QPushButton("انصراف")
+        cancel_btn.clicked.connect(self.reject)
+
+        btn_layout.addStretch()
+        btn_layout.addWidget(self.burn_btn)
+        btn_layout.addWidget(cancel_btn)
+        layout.addLayout(btn_layout)
+
+    def on_accept(self):
+        acc_path = self.desktop_week_path / "acc"
+        pw_path = self.desktop_week_path / "pw"
+
+        if self.rb_acc.isChecked():
+            if not acc_path.exists():
+                QMessageBox.warning(self, "خطا", f"پوشه {acc_path} یافت نشد! ابتدا پوشه هفته را آماده‌سازی کنید.")
+                return
+            self.selected_path = acc_path
+        elif self.rb_pw.isChecked():
+            if not pw_path.exists():
+                QMessageBox.warning(self, "خطا", f"پوشه {pw_path} یافت نشد! ابتدا پوشه هفته را آماده‌سازی کنید.")
+                return
+            self.selected_path = pw_path
+        else:
+            if not self.desktop_week_path.exists():
+                QMessageBox.warning(self, "خطا", f"پوشه {self.desktop_week_path} یافت نشد! ابتدا پوشه هفته را آماده‌سازی کنید.")
+                return
+            self.selected_path = self.desktop_week_path
+
+        self.selected_drive = self.drive_combo.currentData()
+        self.accept()
+
+
 class AboutDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -536,6 +684,7 @@ class MainWindow(QMainWindow):
 
         self.worker: Optional[BackupWorkerThread] = None
         self.dvd_worker: Optional[DvdCopyWorkerThread] = None
+        self.dvd_burn_worker: Optional[DvdBurnWorkerThread] = None
 
         try:
             self.config = load_config()
@@ -727,10 +876,11 @@ class MainWindow(QMainWindow):
         dh.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         dh.setStretchLastSection(True)
 
-        self.dvd_table.setColumnWidth(0, 90)
-        self.dvd_table.setColumnWidth(1, 90)
-        self.dvd_table.setColumnWidth(2, 270)
-        self.dvd_table.setColumnWidth(3, 270)
+        self.dvd_table.setColumnWidth(0, 80)
+        self.dvd_table.setColumnWidth(1, 80)
+        self.dvd_table.setColumnWidth(2, 230)
+        self.dvd_table.setColumnWidth(3, 230)
+        self.dvd_table.setColumnWidth(4, 220)
 
         self.dvd_table.setShowGrid(True)
         self.dvd_table.setAlternatingRowColors(True)
@@ -752,6 +902,8 @@ class MainWindow(QMainWindow):
         self.dvd_table.setRowCount(len(self.dvd_weeks))
 
         for row, week in enumerate(self.dvd_weeks):
+            self.dvd_table.setRowHeight(row, 44)
+
             # Checkbox: Written
             write_item = QTableWidgetItem()
             write_item.setFlags(Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsEnabled)
@@ -770,12 +922,53 @@ class MainWindow(QMainWindow):
             self.dvd_table.setItem(row, 2, QTableWidgetItem(week.from_jalali))
             self.dvd_table.setItem(row, 3, QTableWidgetItem(week.to_jalali))
 
-            # Action button
-            copy_btn = QPushButton("📂 آماده‌سازی پوشه")
-            copy_btn.setStyleSheet("margin: 2px; padding: 4px; font-size: 12px; font-weight: bold;")
-            copy_btn.setMinimumHeight(28)
+            # Action buttons layout
+            action_widget = QWidget()
+            action_layout = QHBoxLayout(action_widget)
+            action_layout.setContentsMargins(4, 4, 4, 4)
+            action_layout.setSpacing(6)
+
+            copy_btn = QPushButton("📂 آماده‌سازی")
+            copy_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #313244;
+                    color: #cdd6f4;
+                    border: 1px solid #45475a;
+                    border-radius: 6px;
+                    padding: 4px 8px;
+                    font-size: 11px;
+                    font-weight: bold;
+                }
+                QPushButton:hover {
+                    background-color: #45475a;
+                }
+            """)
+            copy_btn.setMinimumHeight(30)
+            copy_btn.setToolTip("کپی و آماده‌سازی فایل‌های این هفته روی دسکتاپ")
             copy_btn.clicked.connect(lambda checked, w=week: self.start_dvd_copy(w))
-            self.dvd_table.setCellWidget(row, 4, copy_btn)
+
+            burn_btn = QPushButton("💿 رایت DVD")
+            burn_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #a6e3a1;
+                    color: #11111b;
+                    border: none;
+                    border-radius: 6px;
+                    padding: 4px 8px;
+                    font-size: 11px;
+                    font-weight: bold;
+                }
+                QPushButton:hover {
+                    background-color: #94e2d5;
+                }
+            """)
+            burn_btn.setMinimumHeight(30)
+            burn_btn.setToolTip("رایت مستقیم روی دیسک DVD")
+            burn_btn.clicked.connect(lambda checked, w=week: self.prompt_dvd_burn(w))
+
+            action_layout.addWidget(copy_btn)
+            action_layout.addWidget(burn_btn)
+            self.dvd_table.setCellWidget(row, 4, action_widget)
 
         self.dvd_table.blockSignals(False)
 
@@ -803,12 +996,14 @@ class MainWindow(QMainWindow):
         save_dvd_tracker(tracker_data)
 
     def start_dvd_copy(self, week: DvdWeek):
-        if self.dvd_worker and self.dvd_worker.isRunning():
-            QMessageBox.warning(self, "خطا", "یک عملیات کپی آرشیو دیگر در حال اجراست.")
+        if (self.dvd_worker and self.dvd_worker.isRunning()) or (self.dvd_burn_worker and self.dvd_burn_worker.isRunning()):
+            QMessageBox.warning(self, "خطا", "یک عملیات کپی یا رایت دیگر در حال اجراست.")
             return
 
         self.dvd_progress_card.setVisible(True)
         self.dvd_progress_bar.setValue(0)
+        self.dvd_progress_bar.setFormat("پیشرفت کپی فایل‌ها: %p%")
+        self.dvd_cancel_btn.setText("انصراف از کپی")
         self.dvd_status_label.setText(f"در حال آماده‌سازی فایل‌های هفته: {week.key}")
         self.tab_widget.setEnabled(False)
 
@@ -825,7 +1020,10 @@ class MainWindow(QMainWindow):
     def cancel_dvd_copy(self):
         if self.dvd_worker and self.dvd_worker.isRunning():
             self.dvd_worker.cancel()
-            self.dvd_status_label.setText("در حال متوقف کردن عملیات...")
+            self.dvd_status_label.setText("در حال متوقف کردن عملیات کپی...")
+        elif self.dvd_burn_worker and self.dvd_burn_worker.isRunning():
+            self.dvd_burn_worker.cancel()
+            self.dvd_status_label.setText("در حال متوقف کردن عملیات رایت DVD...")
 
     def on_dvd_copy_progress(self, p: CopyProgress):
         self.dvd_status_label.setText(f"در حال کپی فایل: {p.current_file} ({p.copied_files}/{p.total_files})")
@@ -843,6 +1041,82 @@ class MainWindow(QMainWindow):
             )
         else:
             QMessageBox.critical(self, "خطا", f"عملیات کپی آرشیو با خطا مواجه شد:\n{err}")
+
+    def prompt_dvd_burn(self, week: DvdWeek):
+        if (self.dvd_worker and self.dvd_worker.isRunning()) or (self.dvd_burn_worker and self.dvd_burn_worker.isRunning()):
+            QMessageBox.warning(self, "خطا", "یک عملیات کپی یا رایت دیگر در حال اجراست.")
+            return
+
+        week_desktop_dir = get_desktop_dir() / week.key
+        if not week_desktop_dir.exists():
+            res = QMessageBox.question(
+                self, "پوشه یافت نشد",
+                f"پوشه این هفته ({week.key}) هنوز روی دسکتاپ ایجاد نشده است.\nآیا مایلید ابتدا عملیات کپی و آماده‌سازی انجام شود؟",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.Yes
+            )
+            if res == QMessageBox.StandardButton.Yes:
+                self.start_dvd_copy(week)
+            return
+
+        # Check burning tools
+        ok, tool_msg = is_burning_tool_available()
+        if not ok:
+            QMessageBox.critical(self, "ابزار رایت یافت نشد", tool_msg)
+            return
+
+        dlg = DvdBurnSelectDialog(week.key, self)
+        if dlg.exec() == QDialog.DialogCode.Accepted and dlg.selected_path:
+            self.start_dvd_burn(week, str(dlg.selected_path), dlg.selected_drive)
+
+    def start_dvd_burn(self, week: DvdWeek, target_path: str, drive_path: Optional[str]):
+        folder_name = Path(target_path).name
+        self.dvd_progress_card.setVisible(True)
+        self.dvd_progress_bar.setValue(0)
+        self.dvd_progress_bar.setFormat("پیشرفت رایت دیسک: %p%")
+        self.dvd_cancel_btn.setText("انصراف از رایت")
+        self.dvd_status_label.setText(f"در حال آماده‌سازی و شروع رایت: {folder_name}")
+        self.tab_widget.setEnabled(False)
+
+        self.current_burning_week = week
+        self.dvd_burn_worker = DvdBurnWorkerThread(
+            target_dir=target_path,
+            drive_path=drive_path
+        )
+        self.dvd_burn_worker.progress_signal.connect(self.on_dvd_burn_progress)
+        self.dvd_burn_worker.finished_signal.connect(self.on_dvd_burn_finished)
+        self.dvd_burn_worker.start()
+
+    def on_dvd_burn_progress(self, pct: float, status_msg: str):
+        self.dvd_progress_bar.setValue(int(pct))
+        self.dvd_status_label.setText(f"در حال رایت دیسک ({pct:.1f}%): {status_msg}")
+
+    def on_dvd_burn_finished(self, success: bool, msg: str):
+        self.tab_widget.setEnabled(True)
+        self.dvd_progress_card.setVisible(False)
+
+        if success:
+            if hasattr(self, "current_burning_week") and self.current_burning_week:
+                self.current_burning_week.written = True
+                # Update row checkmark in table
+                for row, w in enumerate(self.dvd_weeks):
+                    if w.key == self.current_burning_week.key:
+                        item = self.dvd_table.item(row, 0)
+                        if item:
+                            item.setCheckState(Qt.CheckState.Checked)
+                        break
+                # Save status to yaml
+                tracker_data = {}
+                for w in self.dvd_weeks:
+                    tracker_data[w.key] = {"written": w.written, "sent": w.sent}
+                save_dvd_tracker(tracker_data)
+
+            QMessageBox.information(
+                self, "رایت موفق",
+                f"{msg}\n\nوضعیت این هفته به حالت «رایت شده» به‌روزرسانی شد."
+            )
+        else:
+            QMessageBox.critical(self, "خطا در رایت دیسک", f"عملیات رایت ناموفق بود:\n{msg}")
 
     def populate_initial_table(self):
         self.table.setRowCount(len(self.config.jobs))
