@@ -13,6 +13,7 @@ dist/
 # Runtime data & sensitive configs
 config.yaml
 dvd_tracker.yaml
+logs/
 .env
 
 # OS files

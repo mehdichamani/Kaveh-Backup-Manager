@@ -240,6 +240,21 @@ def run_backup_job_with_progress(
             error_message=f"مسیر سورس '{job.source}' در دسترس نیست!"
         )
 
+    # Check destination availability / create if needed
+    try:
+        os.makedirs(dest_path, exist_ok=True)
+    except Exception as e:
+        return JobResult(
+            job=job,
+            success=False,
+            source_available=True,
+            exit_code=-3,
+            files_before=0,
+            files_after=0,
+            new_files_count=0,
+            error_message=f"مسیر مقصد '{job.destination}' در دسترس نیست یا دسترسی غیرمجاز است: {e}"
+        )
+
     # Gather destination files before copy
     dest_files_before = scan_directory_files(dest_path)
     count_before = len(dest_files_before)
@@ -285,13 +300,13 @@ def run_backup_job_with_progress(
             )
 
         target_file_path = dest_path / sf.relative_path
-        os.makedirs(target_file_path.parent, exist_ok=True)
 
         # Copy in 1MB chunks
         chunk_size = 1024 * 1024
         file_bytes_copied = 0
 
         try:
+            os.makedirs(target_file_path.parent, exist_ok=True)
             with open(sf.path, 'rb') as fsrc:
                 with open(target_file_path, 'wb') as fdst:
                     while True:

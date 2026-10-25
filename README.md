@@ -53,8 +53,10 @@ dvd_tracker.yaml           # وضعیت ردیابی آرشیو DVD
 
 ### نصب وابستگی‌ها
 
+پروژه با `uv` و استاندارد `pyproject.toml` مدیریت می‌شود:
+
 ```bash
-pip install -r requirements.txt
+uv sync
 ```
 
 ### اجرا

@@ -18,13 +18,18 @@
 | `core/dvd_tracker.py` | Jalali ↔ Gregorian date conversion, weekly period generation |
 | `core/retention.py` | `run_retention_policy()` — deletes files older than N days |
 
-## Dependencies
+## Dependencies & Package Management
 
-```
-pip install pyyaml PyQt6 pyinstaller rich
+Managed with `uv` and `pyproject.toml`:
+
+```bash
+uv sync
 ```
 
-`rich` is not in `requirements.txt` but is used by `ui/terminal.py`.
+Running or building via uv:
+```bash
+uv run python backup_manager.py
+```
 
 ## Build
 

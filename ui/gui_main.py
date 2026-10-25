@@ -413,12 +413,26 @@ class BackupWorkerThread(QThread):
             def is_cancel():
                 return self._is_cancelled
 
-            res = run_backup_job_with_progress(job, log_dir, on_progress, is_cancel)
+            try:
+                res = run_backup_job_with_progress(job, log_dir, on_progress, is_cancel)
+            except Exception as e:
+                res = JobResult(
+                    job=job,
+                    success=False,
+                    source_available=True,
+                    exit_code=-99,
+                    files_before=0,
+                    files_after=0,
+                    new_files_count=0,
+                    error_message=f"خطای سیستمی: {str(e)}"
+                )
             results.append(res)
             self.job_finished_signal.emit(res)
 
             status_str = "موفق" if res.success else "خطا"
             msg = f"پایان سرور {job.name}: وضعیت={status_str}، جدید={res.new_files_count}، مجموع={res.files_after}"
+            if not res.success and res.error_message:
+                msg += f" (دلیل: {res.error_message})"
             self.log_signal.emit(f"  • {msg}")
             log_lines.append(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {msg}")
 
@@ -1177,7 +1191,8 @@ class MainWindow(QMainWindow):
                 elif not r.success:
                     status_item = QTableWidgetItem("خطا در کپی")
                     status_item.setForeground(QColor("#f38ba8"))
-                    msg_item = QTableWidgetItem(f"کد خطا: {r.exit_code}")
+                    err_txt = f": {r.error_message}" if r.error_message else f" (کد: {r.exit_code})"
+                    msg_item = QTableWidgetItem(f"خطا{err_txt}")
                 elif r.warning_stale:
                     status_item = QTableWidgetItem("هشدار مانیتورینگ")
                     status_item.setForeground(QColor("#f9e2af"))

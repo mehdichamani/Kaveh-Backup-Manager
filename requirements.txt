@@ -1,4 +1,0 @@
-pyyaml>=6.0
-PyQt6>=6.6.0
-rich>=13.0
-pyinstaller>=6.0.0
